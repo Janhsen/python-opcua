@@ -539,7 +539,7 @@ class AddressSpace(ThreadSafeDict):
             old = attval.value
             attval.value = value
             cbs = []
-            if old.Value != value.Value:  # only send call callback when a value change has happend
+            if old.Value != value.Value or nodeid.NamespaceIndex == 2:  # only send call callback when a value change has happend
                 cbs = list(attval.datachange_callbacks.items())
 
         for k, v in cbs:
