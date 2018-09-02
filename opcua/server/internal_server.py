@@ -3,12 +3,14 @@ Internal server implementing opcu-ua interface.
 Can be used on server side or to implement binary/https opc-ua servers
 """
 from datetime import datetime, timedelta
-from copy import copy
 import pickle
 import os
 import logging
 from threading import Lock
 from enum import Enum
+from socket import INADDR_ANY # IPv4 '0.0.0.0'
+IN6ADDR_ANY = '::'
+from ipaddress import ip_address
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -134,18 +136,41 @@ class InternalServer(object):
 
     def get_endpoints(self, params=None, sockname=None):
         self.logger.info("get endpoint")
-        # return to client the ip address it has access to
-        edps = []
-        for edp in self.endpoints:
-            edp1 = copy(edp)
-            if '0.0.0.0' in edp1.EndpointUrl and params.EndpointUrl:
-                edp1.EndpointUrl = params.EndpointUrl
-            elif sockname:
-                url = urlparse(edp1.EndpointUrl)
-                url = url._replace(netloc=sockname[0] + ":" + str(sockname[1]))
-                edp1.EndpointUrl = url.geturl()
-            edps.append(edp1)
-        return edps
+        # return to client the endpoints it has access to
+        edps = pickle.loads(pickle.dumps(self.endpoints))
+        netloc = self._get_netloc(params, sockname)
+        return [self._endpoint_replace_inaddr_any(edp, netloc) for edp in edps]
+
+    @staticmethod
+    def _get_netloc(params=None, sockname=None):
+        # find the ip:port as seen by our client.
+        netloc = None
+        if params and params.EndpointUrl:
+            # use ip:port as provided within client request params.
+            netloc = urlparse(params.EndpointUrl).netloc
+        if not netloc and sockname:
+            # use ip:port extracted from our local interface.
+            netloc = sockname[0] + ":" + str(sockname[1])
+        return netloc
+
+    @staticmethod
+    def _endpoint_replace_inaddr_any(edp, netloc):
+        edp.EndpointUrl = InternalServer._replace_inaddr_any(edp.EndpointUrl, netloc)
+        return edp
+
+    @staticmethod
+    def _replace_inaddr_any(urlStr, netloc):
+        # If urlStr is '0.0.0.0:port' or '[::]:port', use netloc ip:port.
+        parseResult = urlparse(urlStr)
+        try:
+            hostip = ip_address(parseResult.hostname)
+        except ValueError:
+            hostip = None
+        if not (hostip and netloc):
+            pass
+        elif ip_address(hostip) in (ip_address(INADDR_ANY), ip_address(IN6ADDR_ANY)):
+            urlStr = parseResult._replace(netloc=netloc).geturl()
+        return urlStr
 
     def create_session(self, name, user=UserManager.User.Anonymous, external=False):
         return InternalSession(self, self.subscription_service, name, user=user, external=external)
