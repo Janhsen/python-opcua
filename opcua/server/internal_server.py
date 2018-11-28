@@ -21,7 +21,6 @@ from opcua.common.callback import (CallbackType, ServerItemCallback,
 from opcua.common.node import Node
 from opcua.server.history import HistoryManager
 from opcua.server.address_space import AddressSpace
-from opcua.server.address_space_sqlite import AddressSpaceSQLite
 from opcua.server.address_space import AttributeService
 from opcua.server.address_space import ViewService
 from opcua.server.address_space import NodeManagementService
