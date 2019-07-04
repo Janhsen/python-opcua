@@ -483,9 +483,22 @@ class AddressSpaceSQLite(AddressSpace):
         )
         backend.execute_write(cmd, params=params, commit=commit)
 
+    @staticmethod
+    def _drop_references(backend, nodeid, table=REFS_TABLE_NAME, commit=True):
+        assert(nodeid.NodeIdType == NodeIdType.Numeric)
+        binNodeId = ua.ua_binary.nodeid_to_binary(nodeid)
+        cmd = 'DELETE FROM "{tn}" WHERE {nid}=?'.format(
+            tn=table,
+            nid=AddressSpaceSQLite.NODEID_COL_NAME
+        )
+        params = (
+          sqlite3.Binary(binNodeId),
+        )
+        backend.execute_write(cmd, params=params, commit=commit)
+
     def _calcRefPrimaryKey(nodeid, ref):
-        binNodeId = ua.ua_binary.nodeid_to_binary(nodeid)     # Our own nodeid
-        refNodeId = ua.ua_binary.nodeid_to_binary(ref.NodeId) # Referred nodeid
+        binNodeId = ua.ua_binary.nodeid_to_binary(nodeid)      # Our own nodeid
+        refNodeId = ua.ua_binary.nodeid_to_binary(ref.NodeId)  # Referred nodeid
         primaryKey = binNodeId + refNodeId + pack(">B", int(ref.IsForward))
         return binNodeId, refNodeId, primaryKey
 
