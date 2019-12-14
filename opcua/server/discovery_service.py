@@ -2,6 +2,13 @@
 from opcua import ua
 from threading import Lock
 from functools import partial
+from copy import deepcopy
+
+from socket import INADDR_ANY # IPv4 '0.0.0.0'
+IN6ADDR_ANY = '::'
+from ipaddress import ip_address
+from urllib.parse import urlparse
+
 
 class LocalDiscoveryService(object):
     REG_EXPIRE_TIMEOUT = 600 # [s] registration expiration (remote servers only).
@@ -23,7 +30,7 @@ class LocalDiscoveryService(object):
     def thread_loop(self):
         return self._parent.thread_loop
 
-    def find_servers(self, params):
+    def find_servers(self, params, sockname=None):
         servers = []
         with self._lock:
             for srvDesc in self._known_servers.values():
@@ -38,7 +45,47 @@ class LocalDiscoveryService(object):
                     if srv_uri[:len(uri)] == uri:
                         servers.append(srvDesc.applicationDescription)
                         break
+        try:
+            netloc = self.get_netloc_from_endpointurl(
+                endpointUrl=getattr(params, 'EndpointUrl', None),
+                sockname=sockname
+            )
+        except Exception:
+            raise 
+            self.logger.info("Failed to extract EndpointUrl from request parameters")
+            return servers
+        servers = deepcopy(servers)
+        for appDesc in servers:
+            appDesc.DiscoveryUrls = [self.replace_inaddr_any(url, netloc) for url in appDesc.DiscoveryUrls]
         return servers
+
+    @staticmethod
+    def get_netloc_from_endpointurl(endpointUrl=None, sockname=None):
+        # Find the ip:port as seen by our client.
+        netloc = None
+        if endpointUrl:
+            # use ip:port as provided within client request params.
+            netloc = urlparse(endpointUrl).netloc or None
+        if not netloc and sockname:
+            # use ip:port extracted from our local interface.
+            netloc = sockname[0] + ":" + str(sockname[1])
+        if not netloc:
+            raise Exception('Could not extract netloc from endpoint', endpointUrl)
+        return netloc
+
+    @staticmethod
+    def replace_inaddr_any(urlStr, netloc):
+        # If urlStr is '0.0.0.0:port' or '[::]:port', use netloc ip:port.
+        parseResult = urlparse(urlStr)
+        try:
+            hostip = ip_address(parseResult.hostname)
+        except ValueError:
+            hostip = None
+        if not netloc:
+            pass
+        elif hostip in (ip_address(INADDR_ANY), ip_address(IN6ADDR_ANY)):
+            urlStr = parseResult._replace(netloc=netloc).geturl()
+        return urlStr
 
     def add_server_description(self, srvDesc):
         assert(isinstance(srvDesc, LocalDiscoveryService.ServerDescription))

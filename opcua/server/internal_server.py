@@ -4,17 +4,9 @@ Can be used on server side or to implement binary/https opc-ua servers
 """
 from datetime import datetime, timedelta
 from copy import deepcopy
-import os
 import logging
 from threading import Lock
 from enum import Enum
-from socket import INADDR_ANY # IPv4 '0.0.0.0'
-IN6ADDR_ANY = '::'
-from ipaddress import ip_address
-try:
-    from urllib.parse import urlparse
-except ImportError:
-    from urlparse import urlparse
 
 from opcua import ua
 from opcua.common import utils
@@ -31,13 +23,13 @@ from opcua.server.subscription_service import SubscriptionService
 from opcua.server.discovery_service import LocalDiscoveryService
 from opcua.server.standard_address_space import standard_address_space
 from opcua.server.user_manager import UserManager
-#from opcua.common import xmlimporter
 
 
 class SessionState(Enum):
     Created = 0
     Activated = 1
     Closed = 2
+
 
 class InternalServer(object):
 
@@ -50,7 +42,7 @@ class InternalServer(object):
         self.endpoints = []
         self._channel_id_counter = 5
         self.disabled_clock = False  # for debugging we may want to disable clock that writes too much in log
-        self._local_discovery_service = None # lazy-loading
+        self._local_discovery_service = None  # lazy-loading
 
         self.aspace = AddressSpace() if aspace is None else aspace
         self.attribute_service = AttributeService(self.aspace)
@@ -69,8 +61,8 @@ class InternalServer(object):
 
         # create a session to use on server side
         self.session_cls = session_cls or InternalSession
-        self.isession = self.session_cls(self, \
-          self.subscription_service, "Internal", user=UserManager.User.Admin)
+        self.isession = self.session_cls(
+            self, self.subscription_service, "Internal", user=UserManager.User.Admin)
 
         self.current_time_node = Node(self.isession, ua.NodeId(ua.ObjectIds.Server_ServerStatus_CurrentTime))
         self.setup_nodes()
@@ -88,7 +80,7 @@ class InternalServer(object):
     @property
     def local_discovery_service(self):
         if self._local_discovery_service is None:
-            self._local_discovery_service = LocalDiscoveryService(parent = self)
+            self._local_discovery_service = LocalDiscoveryService(parent=self)
             for edp in self.endpoints:
                 srvDesc = LocalDiscoveryService.ServerDescription(edp.Server)
                 self._local_discovery_service.add_server_description(srvDesc)
@@ -141,37 +133,15 @@ class InternalServer(object):
     def get_endpoints(self, params=None, sockname=None):
         self.logger.info("get endpoint")
         # return to client the endpoints it has access to
-        netloc = self._get_netloc(params, sockname)
         edps = deepcopy(self.endpoints)
-        for edp in edps:
-            edp.EndpointUrl = InternalServer._replace_inaddr_any(edp.EndpointUrl, netloc)
-        return edps
-
-    @staticmethod
-    def _get_netloc(params=None, sockname=None):
-        # find the ip:port as seen by our client.
-        netloc = None
-        if params and params.EndpointUrl:
-            # use ip:port as provided within client request params.
-            netloc = urlparse(params.EndpointUrl).netloc
-        if not netloc and sockname:
-            # use ip:port extracted from our local interface.
-            netloc = sockname[0] + ":" + str(sockname[1])
-        return netloc
-
-    @staticmethod
-    def _replace_inaddr_any(urlStr, netloc):
-        # If urlStr is '0.0.0.0:port' or '[::]:port', use netloc ip:port.
-        parseResult = urlparse(urlStr)
         try:
-            hostip = ip_address(parseResult.hostname)
-        except ValueError:
-            hostip = None
-        if not netloc:
-            pass
-        elif hostip in (ip_address(INADDR_ANY), ip_address(IN6ADDR_ANY)):
-            urlStr = parseResult._replace(netloc=netloc).geturl()
-        return urlStr
+            netloc = LocalDiscoveryService.get_netloc_from_endpointurl(getattr(params, 'EndpointUrl', None))
+        except Exception:
+            self.logger.info("Failed to extract EndpointUrl from request parameters")
+            return edps
+        for edp in edps:
+            edp.EndpointUrl = LocalDiscoveryService.replace_inaddr_any(edp.EndpointUrl, netloc)
+        return edps
 
     def create_session(self, name, user=UserManager.User.Anonymous, external=False):
         return self.session_cls(self, self.subscription_service, name, user=user, external=external)
@@ -302,7 +272,7 @@ class InternalSession(object):
         self.state = SessionState.Activated
         id_token = params.UserIdentityToken
         if isinstance(id_token, ua.UserNameIdentityToken):
-            if self.user_manager.check_user_token(self, id_token) == False:
+            if self.user_manager.check_user_token(self, id_token) is False:
                 raise utils.ServiceError(ua.StatusCodes.BadUserAccessDenied)
         self.logger.info("Activated internal session %s for user %s", self.name, self.user)
         return result

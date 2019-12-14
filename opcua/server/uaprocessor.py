@@ -231,7 +231,7 @@ class UaProcessor(object):
             self.logger.info("find servers request")
             params = struct_from_binary(ua.FindServersParameters, body)
 
-            servers = self.local_discovery_service.find_servers(params)
+            servers = self.local_discovery_service.find_servers(params, sockname=self.sockname)
 
             response = ua.FindServersResponse()
             response.Servers = servers
