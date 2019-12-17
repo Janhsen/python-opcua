@@ -517,39 +517,6 @@ class AddressSpaceSQLite(AddressSpace):
         backend.execute_write(cmd, params=params, commit=commit)
 
     @staticmethod
-    def _drop_references(backend, nodeid, table=REFS_TABLE_NAME, commit=True):
-        assert(nodeid.NodeIdType == NodeIdType.Numeric)
-        binNodeId = ua.ua_binary.nodeid_to_binary(nodeid)
-        cmd = 'DELETE FROM "{tn}" WHERE {nid}=?'.format(
-            tn=table,
-            nid=AddressSpaceSQLite.NODEID_COL_NAME
-        )
-        params = (
-          sqlite3.Binary(binNodeId),
-        )
-        backend.execute_write(cmd, params=params, commit=commit)
-
-    def _calcRefPrimaryKey(nodeid, ref):
-        binNodeId = ua.ua_binary.nodeid_to_binary(nodeid)      # Our own nodeid
-        refNodeId = ua.ua_binary.nodeid_to_binary(ref.NodeId)  # Referred nodeid
-        primaryKey = binNodeId + refNodeId + pack(">B", int(ref.IsForward))
-        return binNodeId, refNodeId, primaryKey
-
-    def _remove_reference_threadsafe(self, nodeid, ref, table=REFS_TABLE_NAME, commit=True):
-        with self._lock:
-            AddressSpaceSQLite._remove_reference(self.backend, nodeid, ref, table, commit=commit)
-
-    @staticmethod
-    def _remove_reference(backend, nodeid, ref, table=REFS_TABLE_NAME, commit=True):
-        cmd = 'DELETE FROM "{tn}" WHERE _Id = ?'.format(tn=table)
-        binNodeId, refNodeId, primaryKey = \
-            AddressSpaceSQLite._calcRefPrimaryKey(nodeid, ref)
-        params = (
-            sqlite3.Binary(primaryKey),
-        )
-        backend.execute_write(cmd, params=params, commit=commit)
-
-    @staticmethod
     def _read_reference_row(row):
         ref = ua.uaprotocol_auto.ReferenceDescription()
         ref.ReferenceTypeId = ua.ua_binary.nodeid_from_binary(Buffer(row[2]))
