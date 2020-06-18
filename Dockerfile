@@ -7,6 +7,6 @@ RUN pip3 install pyvips cryptography pytz lxml datetime python-dateutil
 WORKDIR /data
 
 COPY opcua /data/opcua
-COPY server-minimal.py /data
+COPY server_minimal.py.py /data
 
 CMD [ "python", "/data/server-minimal.py" ]
