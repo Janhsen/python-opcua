@@ -23,7 +23,6 @@ use_crypto = True
 try:
     from opcua.crypto import uacrypto
 except ImportError:
-    logging.getLogger(__name__).warning("cryptography is not installed, use of crypto disabled")
     use_crypto = False
 
 
@@ -90,6 +89,9 @@ class Client(object):
     the raw OPC-UA services interface.
     """
 
+    if use_crypto is False:
+        logging.getLogger(__name__).warning("cryptography is not installed, use of crypto disabled")
+
     def __init__(self, url, timeout=4):
         """
 
@@ -149,9 +151,6 @@ class Client(object):
         Find endpoint with required security mode and policy URI
         """
         for ep in endpoints:
-            print(ep.EndpointUrl,ua.OPC_TCP_SCHEME)
-            print(ep.SecurityMode, security_mode)
-            print(ep.SecurityPolicyUri, policy_uri)
             if (ep.EndpointUrl.startswith(ua.OPC_TCP_SCHEME) and
                     ep.SecurityMode == security_mode and
                     ep.SecurityPolicyUri == policy_uri):
@@ -274,11 +273,21 @@ class Client(object):
         try:
             self.send_hello()
             self.open_secure_channel()
-            self.create_session()
+            try:
+                self.create_session()
+                try:
+                    self.activate_session(username=self._username, password=self._password, certificate=self.user_certificate)
+                except Exception:
+                    # clean up the session
+                    self.close_session()
+                    raise
+            except Exception:
+                # clean up the secure channel
+                self.close_secure_channel()
+                raise
         except Exception:
             self.disconnect_socket()  # clean up open socket
             raise
-        self.activate_session(username=self._username, password=self._password, certificate=self.user_certificate)
 
     def disconnect(self):
         """
@@ -466,7 +475,7 @@ class Client(object):
         # the last serverNonce to the serverCertificate
         sig = uacrypto.sign_sha1(self.user_private_key, challenge)
         params.UserTokenSignature = ua.SignatureData()
-        params.UserTokenSignature.Algorithm = "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
+        params.UserTokenSignature.Algorithm = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
         params.UserTokenSignature.Signature = sig
 
     def _add_user_auth(self, params, username, password):
